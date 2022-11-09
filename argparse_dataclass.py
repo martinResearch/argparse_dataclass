@@ -278,7 +278,8 @@ else:
 
         def __call__(self, parser, namespace, values, option_string=None):
             if option_string in self.option_strings:
-                setattr(namespace, self.dest, not option_string.startswith("--no-"))
+                setattr(namespace, self.dest,
+                        not option_string.startswith("--no-"))
 
         def format_usage(self):
             return " | ".join(self.option_strings)
@@ -317,13 +318,19 @@ def parse_known_args(
 
 
 def _add_dataclass_options(
-    options_class: typing.Type[OptionsType], parser: argparse.ArgumentParser
+    options_class: typing.Type[OptionsType],
+    parser: argparse.ArgumentParser,
+    replace_underscores: bool = False
 ) -> None:
     if not is_dataclass(options_class):
         raise TypeError("cls must be a dataclass")
 
     for field in fields(options_class):
-        args = field.metadata.get("args", [f"--{field.name.replace('_', '-')}"])
+        if replace_underscores:
+            arg_name = field.name.replace('_', '-')
+        else:
+            arg_name = field.name
+        args = field.metadata.get("args", [f"--{arg_name}"])
         positional = not args[0].startswith("-")
         kwargs = {
             "type": field.metadata.get("type", field.type),
@@ -347,7 +354,8 @@ def _add_dataclass_options(
                 # did not specify the type of the elements within the list, we
                 # try to infer it:
                 try:
-                    kwargs["type"] = get_args(field.type)[0]  # get_args returns a tuple
+                    # get_args returns a tuple
+                    kwargs["type"] = get_args(field.type)[0]
                 except IndexError:
                     # get_args returned an empty tuple, type cannot be inferred
                     raise ValueError(
@@ -370,7 +378,8 @@ def _add_dataclass_options(
                 arg = next(a for a in f_args if a is not NoneType)
                 kwargs["type"] = arg
             else:
-                raise TypeError("Union types other than 'Optional' are not supported")
+                raise TypeError(
+                    "Union types other than 'Optional' are not supported")
         parser.add_argument(*args, **kwargs)
 
 
@@ -417,10 +426,17 @@ class ArgumentParser(argparse.ArgumentParser, typing.Generic[OptionsType]):
 
     """
 
-    def __init__(self, options_class: typing.Type[OptionsType], *args, **kwargs):
+    def __init__(
+        self,
+        options_class: typing.Type[OptionsType],
+        replace_underscores: bool = False,
+        *args,
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self._options_type: typing.Type[OptionsType] = options_class
-        _add_dataclass_options(options_class, self)
+        _add_dataclass_options(options_class, self,
+                               replace_underscores=replace_underscores)
 
     def parse_args(self, args: ArgsType = None, namespace=None) -> OptionsType:
         """Parse arguments and return as the dataclass type."""
